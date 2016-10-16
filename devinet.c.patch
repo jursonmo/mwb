@@ -1,0 +1,10 @@
+--- ../linux-3.18.27/net/ipv4/devinet.c	2016-02-16 04:47:06.000000000 +0800
++++ ./devinet.c	2016-08-14 16:50:41.174957323 +0800
+@@ -547,6 +547,7 @@
+ 	} endfor_ifa(in_dev);
+ 	return NULL;
+ }
++EXPORT_SYMBOL(inet_ifa_byprefix);
+ 
+ static int inet_rtm_deladdr(struct sk_buff *skb, struct nlmsghdr *nlh)
+ {

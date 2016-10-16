@@ -1,0 +1,32 @@
+--- ../linux-3.18.27/net/netfilter/nf_conntrack_core.c	2016-02-16 04:47:06.000000000 +0800
++++ ./nf_conntrack_core.c	2016-09-08 11:21:37.311706593 +0800
+@@ -852,6 +852,10 @@
+ 	 * this is inserted in any list.
+ 	 */
+ 	atomic_set(&ct->ct_general.use, 0);
++	/*add by mojianwei: for multiwan */
++	ct->mwb_entry = NULL;
++	INIT_LIST_HEAD(&ct->list);
++	/*end by mojianwei */	
+ 	return ct;
+ 
+ #ifdef CONFIG_NF_CONNTRACK_ZONES
+@@ -871,10 +875,17 @@
+ }
+ EXPORT_SYMBOL_GPL(nf_conntrack_alloc);
+ 
++void (*mwb_ct_detach)(struct nf_conn *ct);
++EXPORT_SYMBOL_GPL(mwb_ct_detach);
+ void nf_conntrack_free(struct nf_conn *ct)
+ {
+ 	struct net *net = nf_ct_net(ct);
+-
++	void (*detach)(struct nf_conn *ct);
++	rcu_read_lock();
++	detach = rcu_dereference(mwb_ct_detach);
++	if (ct->mwb_entry && detach)
++		detach(ct);
++	rcu_read_unlock();
+ 	/* A freed object has refcnt == 0, that's
+ 	 * the golden rule for SLAB_DESTROY_BY_RCU
+ 	 */

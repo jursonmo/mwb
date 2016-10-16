@@ -1,0 +1,23 @@
+--- ../linux-3.18.27/include/net/netfilter/nf_conntrack.h	2016-08-06 11:38:21.236675414 +0800
++++ ./include/net/netfilter/nf_conntrack.h	2016-08-06 11:39:52.995709695 +0800
+@@ -101,7 +101,10 @@
+ #if defined(CONFIG_NF_CONNTRACK_MARK)
+ 	u_int32_t mark;
+ #endif
+-
++	/*add by mojianwei: for multiwan balance*/
++	void *mwb_entry;
++	struct list_head list;
++	
+ #ifdef CONFIG_NF_CONNTRACK_SECMARK
+ 	u_int32_t secmark;
+ #endif
+@@ -115,6 +118,8 @@
+ 	/* Storage reserved for other modules, must be the last member */
+ 	union nf_conntrack_proto proto;
+ };
++/*add by mojianwei: for multiwan balance*/
++extern void (*mwb_ct_detach)(struct nf_conn *ct);
+ 
+ static inline struct nf_conn *
+ nf_ct_tuplehash_to_ctrack(const struct nf_conntrack_tuple_hash *hash)

@@ -1,0 +1,18 @@
+--- ../linux-3.18.27/net/ipv4/fib_trie.c	2016-02-16 04:47:06.000000000 +0800
++++ ./fib_trie.c	2016-08-14 16:54:35.977174013 +0800
+@@ -1327,6 +1327,7 @@
+ err:
+ 	return err;
+ }
++EXPORT_SYMBOL(fib_table_insert);
+ 
+ /* should be called with rcu_read_lock */
+ static int check_leaf(struct fib_table *tb, struct trie *t, struct leaf *l,
+@@ -1697,6 +1698,7 @@
+ 	alias_free_mem_rcu(fa);
+ 	return 0;
+ }
++EXPORT_SYMBOL(fib_table_delete);
+ 
+ static int trie_flush_list(struct list_head *head)
+ {
