@@ -923,6 +923,11 @@ static int mline_sysfs_register(void)
 	return sysfs_create_file(&THIS_MODULE->mkobj.kobj, &mline_sysfs_attr.attr);
 	
 }
+static void mline_sysfs_unregister(void)
+{
+	return sysfs_remove_file(&THIS_MODULE->mkobj.kobj, &mline_sysfs_attr.attr);
+	
+}
 static inline unsigned int check_line_alive_by_mark(unsigned int  mark)
 {
 	MWB_ASSERT(mark);
@@ -1740,6 +1745,7 @@ __err:
 	return ret;	
 }
 void mwb_module_fini(void){	
+	mline_sysfs_unregister();
 	nf_unregister_hooks(mwb_hooks, ARRAY_SIZE(mwb_hooks));	
 	//rcu_assign_pointer(mwb_ct_detach, NULL); //do it after mwb_ht_cleanup()-> hash_table_cleanup(), avoid ct has free before me detach ct
 	synchronize_net();
@@ -1751,6 +1757,11 @@ void mwb_module_fini(void){
 	unregister_netdevice_notifier(&mwb_fib_netdev_notifier);
 	unregister_inetaddr_notifier(&mwb_fib_inetaddr_notifier);
 	printk("multiple wan balance exit over!\n");
+
+	rcu_barrier();
+	/* Wait for completion of call_rcu()'s , 
+		timer's mwb_entry call_rcu, there is cnt(mwbHashTable->cnt) to make sure call_rcu finish 
+	*/
 }
 module_init(mwb_module_init);
 module_exit(mwb_module_fini);
