@@ -204,6 +204,10 @@ static unsigned int mwb_hash_salt(void);
 static unsigned int mwb_ht_mask(void);
 void me_ct_attach(struct nf_conn *ct, struct mwb_entry *me);
 static int mwb_rate_handle(void);
+
+static int mwb_iprule_del(int line_no);
+static int mwb_iprule_set(int line_no);
+
 static inline struct dst_entry *mwb_entry_dst(struct mwb_entry *me, int dir);
 
 static inline bool ipv4_is_lgroup(__be32 addr)
@@ -666,7 +670,7 @@ static int mwb_rate_handle(void)
 	struct mwb_cpu_dev_stats mds;
 	struct line_info_st *li;
 	uint8_t mask = mwb_lines.line_mask;
-	spin_lock_bh(&mwb_lines.line_lock);	
+	spin_lock_bh(&mwb_lines.line_lock);// rcu_read_lock();	
 	MWB_LINE_MASK_FOR_EACH(i, mask){
 		li = &mwb_lines.line_info[i];
 		mds = mwb_dev_stats_get(li->stats);
@@ -691,7 +695,7 @@ static int mwb_rate_handle(void)
 		li->down_bytes = mds.rx_bytes;
 		li->up_bytes = mds.tx_bytes;
 	}	
-	spin_unlock_bh(&mwb_lines.line_lock);
+	spin_unlock_bh(&mwb_lines.line_lock);// rcu_read_unlock();	
 	return 1;
 }
  void mwb_rate_timer_fun(unsigned long data)
@@ -731,6 +735,7 @@ int mwb_mlines_reset(int line_no, int line_alive, char *line_devname , unsigned 
 			stats_free = li->stats;
 			//li->stats = NULL;
 			memset(li, 0, sizeof(struct line_info_st));	
+			mwb_iprule_del(line_no);
 		}
 		goto out;		
 	}
@@ -764,6 +769,7 @@ int mwb_mlines_reset(int line_no, int line_alive, char *line_devname , unsigned 
 	if (MWB_LINE_MASK_CHECK(mwb_lines.line_mask, line_no))
 		goto out;	
 	MWB_LINE_MASK_SET(mwb_lines.line_mask, line_no);
+	mwb_iprule_set(line_no);
 	mwb_lines.line_alive_cnt++;
 	g_line_change_jiffies = jiffies;
 out:	
@@ -1642,7 +1648,7 @@ static int mwb_fib_inetaddr_event(struct notifier_block *this, unsigned long eve
 {
 	struct in_ifaddr *ifa = (struct in_ifaddr *)ptr;
 	printk("========dump_stack begin=============\n");
-	dump_stack();
+	//dump_stack();
 	printk("========dump_stack over=============\n");
 	switch (event) {
 	case NETDEV_UP:
@@ -1696,6 +1702,7 @@ static int mwb_fib_netdev_event(struct notifier_block *this, unsigned long event
 			}	
 		}		
 		if (stats_free){
+			mwb_iprule_del(line_no);
 			synchronize_net();
 			free_percpu(stats_free);
 		}
@@ -1713,6 +1720,117 @@ struct notifier_block mwb_fib_netdev_notifier = {
 struct notifier_block mwb_fib_inetaddr_notifier = {
 	.notifier_call =  mwb_fib_inetaddr_event,
 };
+
+static void mwb_rules_ops_put(struct fib_rules_ops *ops)
+{
+	if (ops)
+		module_put(ops->owner);
+}
+static struct fib_rules_ops *mwb_lookup_rules_ops(struct net *net, int family)
+{
+	struct fib_rules_ops *ops = NULL;
+	rcu_read_lock();
+	list_for_each_entry_rcu(ops, &net->rules_ops, list) {
+		if (ops->family == family) {
+			if (!try_module_get(ops->owner))
+				ops = NULL;
+			rcu_read_unlock();
+			return ops;
+		}
+	}
+	rcu_read_unlock();
+	return NULL;
+}
+static int mwb_iprule_set( int line_no)
+{
+	struct fib_rules_ops *ops = NULL;
+	struct fib_rule *r, *rule = NULL, *last =  NULL;
+	struct net *net = &init_net;
+	int err = -1;
+	#if 0
+	if (!try_module_get(net->ipv4.rules_ops->owner)){
+		return err;
+	}
+	ops = net->ipv4.rules_ops;
+	#else
+	ops = mwb_lookup_rules_ops(net, AF_INET);
+	#endif
+	if (!ops){
+		return err;
+	}
+	rule = kzalloc(ops->rule_size, GFP_KERNEL);
+	if (rule == NULL) {
+		err = -ENOMEM;
+		goto errout;
+	}
+	rule->pref = line_no + 1001;
+	rule->mark = line_no + 1;
+	rule->mark_mask = 0xff;
+	rule->table = line_no + 1;
+	rule->action = FR_ACT_TO_TBL;
+	rule->flags = 0;
+	rule->fr_net = hold_net(ops->fro_net);
+	
+	rule->suppress_prefixlen = -1;
+	rule->suppress_ifgroup = -1;
+
+	//there is maybe the same pref
+	list_for_each_entry(r, &ops->rules_list, list) {
+		if (r->pref > rule->pref)
+			break;
+		last = r;
+	}
+	
+	atomic_set(&rule->refcnt, 1);//fib_rule_get(rule);
+
+	if (last)
+		list_add_rcu(&rule->list, &last->list);
+	else
+		list_add_rcu(&rule->list, &ops->rules_list);
+
+	/* need to flush route cache when add a iprule ?, system will flush_cache :atomic_inc(&net->ipv4.rt_genid);*/
+	//flush_route_cache(ops);
+	//if (ops->flush_cache)
+	//	ops->flush_cache(ops);//fib4_rule_flush_cache
+errout:
+	mwb_rules_ops_put(ops);
+	return err;
+}
+static int mwb_iprule_del(int line_no)
+{
+	struct fib_rules_ops *ops = NULL;
+	struct fib_rule *rule = NULL;
+	struct net *net = &init_net;
+	int err = -1;
+	unsigned int del_pref = 1001 + line_no;
+	
+	ops = mwb_lookup_rules_ops(net, AF_INET);
+	if (!ops){
+		return err;
+	}
+	list_for_each_entry(rule, &ops->rules_list, list) {
+		/*make sure trave all rules when there are multi rules get the same pref*/
+		if(rule->pref > del_pref)
+			break;
+		if(!(rule->pref == del_pref && rule->table == 1 + line_no
+				&& rule->action == FR_ACT_TO_TBL && rule->mark_mask == 0xff))
+			continue;
+
+		list_del_rcu(&rule->list);
+		
+		if (ops->delete)
+			ops->delete(rule);//fib4_rule_delete
+		//release_net(ops->fro_net);//fib_rule_put -> fib_rule_put_rcu  will do release_net()
+		fib_rule_put(rule);
+		//flush_route_cache(ops);
+		//if (ops->flush_cache)
+		//	ops->flush_cache(ops);//fib4_rule_flush_cache
+		mwb_rules_ops_put(ops);
+		return 0;
+	}
+	mwb_rules_ops_put(ops);
+	return err;
+}
 int mwb_module_init(void){
 	int ret = 0;
 	if(!(mwbHashTable = mwb_ht_init()))
