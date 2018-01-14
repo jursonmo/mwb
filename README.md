@@ -1,6 +1,6 @@
 ### mwb  (multi wan balance): 多wan负载均衡
 
-### 相对原来做法的改进：
+##### 相对原来做法的改进：
 
 + 少用了很多iptables conntrack connmark, --save-mark or --restor-mark
 + 自动添加本地路由到策略路由表，跟main路由表一样，应用层不需要配置wan ip是还要往策略路由表里加
