@@ -86,14 +86,14 @@ struct pair_info{
 	char dst_dev[2][20];
 }g_pair_info;
 #define MLINES_MAX	(8)
-//Ã¿Ãë¼ÆËãÁ÷Á¿´ÎÊý64*16=16*4*16=1024, COUNT_TIMES * 4 *MWB_RATE_CHECK_INTVL
+//æ¯ç§’è®¡ç®—æµé‡æ¬¡æ•°64*16=16*4*16=1024, COUNT_TIMES * 4 *MWB_RATE_CHECK_INTVL
 #define COUNT_TIMES (64)
-//²úÉúÁ÷Á¿¹À¼ÆÐèÒªµÄÊ±¼äms
+//äº§ç”Ÿæµé‡ä¼°è®¡éœ€è¦çš„æ—¶é—´ms
 #define MWB_RATE_CHECK_INTVL 16
-//¶¨ÆÚ¼ì²éentry ÊÇ·ñ³¬Ê±¼ä¸ô
+//å®šæœŸæ£€æŸ¥entry æ˜¯å¦è¶…æ—¶é—´éš”
 #define CHECK_ENTRY_INTVL (2*60*HZ)
 #define MWB_MAX_CHECK_ENTRY 256
-//Ã»ÓÐÁ¬½ÓÒýÓÃºó,³¬Ê±ÆÚÏÞ
+//æ²¡æœ‰è¿žæŽ¥å¼•ç”¨åŽ,è¶…æ—¶æœŸé™
 #define MWB_ENTRY_TIMEOUT_MAX (10*HZ)
 #define DEV_NAME_SIZE 20
 struct mwb_cpu_dev_stats {
@@ -460,7 +460,7 @@ static void mwb_entry_detach_all_ct(struct mwb_entry *entry)
  static void mwb_entry_del(struct hlist_head *h, struct mwb_entry *entry)
 {	
 	mwb_ht_head_lock(h);
-	/* Ä¿Ç°Ö»ÓÐtimer Ò»¸öµØ·½ÓÐÉ¾³ý²Ù×÷,ÔÝÊ±²»ÐèÒªÅÐ¶Ïdeleted
+	/* ç›®å‰åªæœ‰timer ä¸€ä¸ªåœ°æ–¹æœ‰åˆ é™¤æ“ä½œ,æš‚æ—¶ä¸éœ€è¦åˆ¤æ–­deleted
 	if (entry->deleted){
 		mwb_ht_head_unlock(h);
 		return;
@@ -1405,7 +1405,8 @@ static unsigned int mwb_hook_fn(/*unsigned int hook*/const struct nf_hook_ops *o
 		if(mwb_rt_cache_valid(me, dir)){
 			skb_dst_set_noref(skb, mwb_entry_dst(me, dir));
 		}else{
-			// the line is invalid, goto match main table , if the skb is linked data,no problem, 
+			//skb->mark is set, if it attach line is valid, skb route mark will match old line, connect will no disconnect 
+			// the line is invalid, goto match main table , if the skb is direct-route-linked data,no problem, 
 			//if not, match main table default route, maye be disconnect happen
 			if(mwb_input_route(skb, me, dir)){
 				rcu_read_unlock();
